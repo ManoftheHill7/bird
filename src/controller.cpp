@@ -14,6 +14,5 @@ typedef struct Controller {
 
 
 int update() {
-
-    return = 0;
+    return 0;
 }
