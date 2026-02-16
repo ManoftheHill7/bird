@@ -27,7 +27,7 @@ Obstacle* make_obstacle(float x, float y)
 	o->top_y = y - GAP / 2;
 	o->bottom_y = y + GAP / 2;
 	return o;
-} 
+}
 
 
 int main ()
@@ -47,7 +47,7 @@ int main ()
 	SearchAndSetResourceDir("assets");
 
 	// Load a texture from the resources directory
-	Texture wabbit = LoadTexture("art/sprites/wabbit_alpha.png");
+	Texture wabbit = LoadTexture("art/sprites/whale1.png");
 
 	const float SCREEN_TOP = 0;
 	const float SCREEN_BOTTOM = SCREEN_HEIGHT - wabbit.height * 2;
@@ -60,7 +60,7 @@ int main ()
 		player_pos.y += player_vel.y * delta;
 		player_pos.y = std::min(player_pos.y, SCREEN_BOTTOM);
 		player_pos.y = std::max(player_pos.y, SCREEN_TOP);
-		
+
 		if (IsKeyPressed(KEY_SPACE))
 		{
 			player_vel.y -= 800.0f;
@@ -82,7 +82,7 @@ int main ()
 			DrawRectangleV({o->x, o->top_y}, OBSTACLE_DIMENSIONS, DARKGREEN);
 			DrawRectangleV({o->x, o->bottom_y}, OBSTACLE_DIMENSIONS, DARKGREEN);
 		}
-		
+
 		//TODO remove obstacles when too far left
 		//TODO add new obstacle when removing
 
@@ -99,7 +99,7 @@ int main ()
 		// draw our texture to the screen
 		DrawTextureEx(wabbit, player_pos, 0.0, 2.0, WHITE);
 		//TODO draw obstacles
-		
+
 		// end the frame and get ready for the next one  (display frame, poll input, etc...)
 		EndDrawing();
 	}
