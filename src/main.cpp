@@ -6,12 +6,13 @@
 const float SCREEN_WIDTH = 1920;
 const float SCREEN_HEIGHT = 1080;
 const float OBSTACLE_WIDTH = 100;
-const float OBSTACLE_LENGTH = 500;
+const float OBSTACLE_LENGTH = 1000;
 const Vector2 OBSTACLE_DIMENSIONS = {OBSTACLE_WIDTH, OBSTACLE_LENGTH};
 const float GAP = SCREEN_HEIGHT - 300;
 const float SPEED = 300;
-const float SCALE = 2;
+const float SCALE = 4;
 
+float player_deg = 0;
 
 class Obstacle
 {
@@ -29,7 +30,6 @@ Obstacle* make_obstacle(float x, float y)
 	return o;
 }
 
-
 int main ()
 {
 	Vector2 player_pos = {SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
@@ -41,16 +41,16 @@ int main ()
 	SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI);
 
 	// Create the window and OpenGL context
-	InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "bird");
+	InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Floppy Whale");
 
 	// Utility function from resource_dir.h to find the resources folder and set it as the current working directory so we can load from it
 	SearchAndSetResourceDir("assets");
 
 	// Load a texture from the resources directory
-	Texture wabbit = LoadTexture("art/sprites/whale1.png");
+	Texture whale = LoadTexture("art/sprites/whale1.png");
 
 	const float SCREEN_TOP = 0;
-	const float SCREEN_BOTTOM = SCREEN_HEIGHT - wabbit.height * 2;
+	const float SCREEN_BOTTOM = SCREEN_HEIGHT - whale.height * SCALE;
 
 	// game loop
 	while (!WindowShouldClose())		// run the loop until the user presses ESCAPE or presses the Close button on the window
@@ -60,11 +60,21 @@ int main ()
 		player_pos.y += player_vel.y * delta;
 		player_pos.y = std::min(player_pos.y, SCREEN_BOTTOM);
 		player_pos.y = std::max(player_pos.y, SCREEN_TOP);
+		player_deg += delta * 100;
 
 		if (IsKeyPressed(KEY_SPACE))
 		{
 			player_vel.y -= 800.0f;
+			player_deg = std::min(player_deg, -20.0f);
 		}
+
+		if (player_vel.y < -200.0f)
+		{
+			player_deg = std::min(player_deg, -20.0f);
+		} else {
+			player_deg = std::min(player_deg, 20.0f);
+		}
+		player_deg = std::max(player_deg, -20.0f);
 
 		if (player_pos.y == SCREEN_TOP)
 		{
@@ -76,7 +86,7 @@ int main ()
 			player_vel.y = std::min(player_vel.y, 0.0f);
 		}
 
-		for (auto o : obstacles)
+		for (Obstacle* o : obstacles)
 		{
 			o->x -= SPEED * delta;
 			DrawRectangleV({o->x, o->top_y}, OBSTACLE_DIMENSIONS, DARKGREEN);
@@ -90,14 +100,15 @@ int main ()
 		BeginDrawing();
 
 		// Setup the back buffer for drawing (clear color and depth buffers)
-		ClearBackground(BLACK);
+		ClearBackground(BLUE);
 
 		// draw some text using the default font
 		// DrawText(screen_dimensions, 200,200,20,WHITE);
 		// DrawText(character_loc_ptn_text, 600,200,20,WHITE);
+		DrawFPS(100.0f, 100.0f);
 
 		// draw our texture to the screen
-		DrawTextureEx(wabbit, player_pos, 0.0, 2.0, WHITE);
+		DrawTextureEx(whale, player_pos, player_deg, SCALE, WHITE);
 		//TODO draw obstacles
 
 		// end the frame and get ready for the next one  (display frame, poll input, etc...)
@@ -106,9 +117,11 @@ int main ()
 
 	// cleanup
 	// unload our texture so it can be cleaned up
-	UnloadTexture(wabbit);
+	UnloadTexture(whale);
 
 	// destroy the window and cleanup the OpenGL context
 	CloseWindow();
 	return 0;
 }
+
+
