@@ -18,20 +18,32 @@ float tick;
 
 class Obstacle
 {
+	// private:
+	// 	float obstacle_tick;
+
 public:
 	float x, y, gap;
 	static Texture obstacle_image;
 
-	Obstacle(float X, float Y, float Gap)
+	Obstacle(float X = SCREEN_WIDTH, float Y = 0, float Gap = OBSTACLE_GAP)
 	{
 		x = X;
 		y = Y;
 		gap = Gap;
 	}
 
-	// Update()
+	// static void Image()
 	// {
 
+	// }
+
+	// static void Update(float deltaTime, float obstacle_tick)
+	// {
+
+	// }
+	// static void UnloadObstacle()
+	// {
+	// 	UnloadTexture(obstacle_image);
 	// }
 };
 
@@ -41,6 +53,9 @@ Texture Obstacle::obstacle_image;
 class Whale
 {
 private:
+	std::vector<Texture> frames;
+	int currentFrame = 7;
+	float frameTimer = 0.0f;
 	Vector2 player_pos;
 	Vector2 player_vel;
 	float player_deg;
@@ -55,12 +70,19 @@ private:
 	Whale &operator=(const Whale &) = delete;
 
 public:
-	static Texture whale;
-
 	static Whale &Get()
 	{
 		static Whale instance; // Created only once, the first time this is called.
 		return instance;
+	}
+
+	void Animation()
+	{
+		for (int i = 1; i < 9; i++)
+		{
+			// Build path: "art/sprites/whale[1-8].png"
+			frames.push_back(LoadTexture(TextFormat("art/sprites/whale%d.png", i)));
+		}
 	}
 
 	void Jump()
@@ -69,13 +91,13 @@ public:
 		player_deg = std::min(player_deg, -20.0f);
 	}
 
-	void Move(float delta)
+	void Move(float deltaTime)
 	{
-		player_vel.y += GRAVITY * delta;
-		player_pos.y += player_vel.y * delta;
-		player_pos.y = std::min(player_pos.y, SCREEN_HEIGHT - whale.height * SCALE);
+		player_vel.y += GRAVITY * deltaTime;
+		player_pos.y += player_vel.y * deltaTime;
+		player_pos.y = std::min(player_pos.y, SCREEN_HEIGHT - frames[0].height * SCALE);
 		player_pos.y = std::max(player_pos.y, 0.0f);
-		player_deg += delta * 100;
+		player_deg += deltaTime * 100;
 		if (player_vel.y < -200.0f)
 		{
 			player_deg = std::min(player_deg, -20.0f);
@@ -91,19 +113,41 @@ public:
 			player_vel.y = 0;
 		}
 
-		if (player_pos.y == SCREEN_HEIGHT - whale.height * SCALE)
+		if (player_pos.y == SCREEN_HEIGHT - frames[0].height * SCALE)
 		{
 			player_vel.y = std::min(player_vel.y, 0.0f);
 		}
 	}
 
-	void Draw()
+	void Update(float deltaTime)
 	{
-		DrawTextureEx(whale, player_pos, player_deg, SCALE, WHITE);
+		frameTimer += deltaTime;
+		if (IsKeyPressed(KEY_SPACE))
+		{
+			currentFrame = 0;
+		}
+		if (frameTimer >= 0.1)
+		{
+			frameTimer = 0.0f;
+			if (currentFrame < frames.size() - 1)
+				currentFrame++;
+		}
+	}
+
+	void DrawJump()
+	{
+		DrawTextureEx(frames[currentFrame], player_pos, player_deg, SCALE, WHITE);
+	}
+
+	~Whale()
+	{
+		for (int i = 0; i < frames.size(); i++)
+		{
+			UnloadTexture(frames[i]);
+		}
+		frames.clear();
 	}
 };
-
-Texture Whale::whale;
 
 int main()
 {
@@ -117,42 +161,37 @@ int main()
 	SearchAndSetResourceDir("assets");
 
 	// Load a texture from the resources directory
-	Whale::whale = LoadTexture("art/sprites/whale1.png");
+	Whale::Get().Animation();
 	Obstacle::obstacle_image = LoadTexture("art/sprites/whale2.png");
 
-	// Variables
-
-	Obstacle *i = new Obstacle(SCREEN_WIDTH, 0, OBSTACLE_GAP);
+	Obstacle *i = new Obstacle();
 	obstacles.push_back(i);
 
 	// game loop
 	while (!WindowShouldClose()) // run the loop until the user presses ESCAPE or presses the Close button on the window
 	{
-		float delta = GetFrameTime();
-		tick += 10 * delta;
-		Whale::Get().Move(delta);
+		float deltaTime = GetFrameTime();
+		tick += deltaTime;
+		// Obstacle::Update(deltaTime, tick);
+		Whale::Get().Update(deltaTime);
+		Whale::Get().Move(deltaTime);
 
 		if (IsKeyPressed(KEY_SPACE))
 		{
 			Whale::Get().Jump();
 		}
 
-		for (Obstacle *o : obstacles)
+		if (tick > 5)
 		{
-			o->x -= OBSTACLE_SPEED * delta;
-			DrawTextureEx(o->obstacle_image, {o->x, o->y}, 0.0f, SCALE, WHITE);
-			DrawTextureEx(o->obstacle_image, {o->x, o->y + o->gap}, 0.0f, SCALE, WHITE);
-		}
-
-		if (tick > 40)
-		{
-			Obstacle *n = new Obstacle(SCREEN_WIDTH, 0, OBSTACLE_GAP);
+			Obstacle *n = new Obstacle();
 			obstacles.push_back(n);
 			tick = 0;
 		}
 
 		if ((obstacles.front()->x < 0 - OBSTACLE_WIDTH) && (obstacles.size() > 1))
 		{
+			Obstacle *front = obstacles.front();
+			delete front;
 			obstacles.pop_front();
 		}
 
@@ -167,9 +206,13 @@ int main()
 		// DrawText(character_loc_ptn_text, 600,200,20,WHITE);
 		DrawFPS(100.0f, 100.0f);
 
-		// draw our texture to the screen
-		Whale::Get().Draw();
-		// TODO draw obstacles
+		Whale::Get().DrawJump();
+		for (Obstacle *o : obstacles)
+		{
+			o->x -= OBSTACLE_SPEED * deltaTime;
+			DrawTextureEx(o->obstacle_image, {o->x, o->y}, 0.0f, SCALE, WHITE);
+			DrawTextureEx(o->obstacle_image, {o->x, o->y + o->gap}, 0.0f, -1 * SCALE, WHITE);
+		}
 
 		// end the frame and get ready for the next one  (display frame, poll input, etc...)
 		EndDrawing();
@@ -177,7 +220,8 @@ int main()
 
 	// cleanup
 	// unload our texture so it can be cleaned up
-	UnloadTexture(Whale::whale);
+	Whale::Get().~Whale();
+	// Obstacle::UnloadObstacle;
 	UnloadTexture(Obstacle::obstacle_image);
 
 	// destroy the window and cleanup the OpenGL context
