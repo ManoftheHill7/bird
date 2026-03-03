@@ -59,6 +59,7 @@ private:
 	Vector2 player_pos;
 	Vector2 player_vel;
 	float player_deg;
+	Rectangle player_hitbox;
 
 	Whale()
 	{
@@ -98,6 +99,7 @@ public:
 		player_pos.y = std::min(player_pos.y, SCREEN_HEIGHT - frames[0].height * SCALE);
 		player_pos.y = std::max(player_pos.y, 0.0f);
 		player_deg += deltaTime * 100;
+		player_hitbox = {player_pos.x, player_pos.y, frames[0].width * SCALE, frames[0].height * SCALE};
 		if (player_vel.y < -200.0f)
 		{
 			player_deg = std::min(player_deg, -20.0f);
@@ -136,7 +138,8 @@ public:
 
 	void DrawJump()
 	{
-		DrawTextureEx(frames[currentFrame], player_pos, player_deg, SCALE, WHITE);
+		DrawTextureEx(frames[currentFrame], player_pos, player_deg, SCALE, WHITE); 
+		DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, BLANK);  
 	}
 
 	~Whale()
