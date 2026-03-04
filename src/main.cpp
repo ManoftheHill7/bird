@@ -7,13 +7,12 @@
 
 const float SCREEN_WIDTH = 1920;
 const float SCREEN_HEIGHT = 1080;
-const float OBSTACLE_WIDTH = 100;
-const float OBSTACLE_LENGTH = 500;
-const Vector2 OBSTACLE_DIMENSIONS = {OBSTACLE_WIDTH, OBSTACLE_LENGTH};
 const float OBSTACLE_GAP = SCREEN_HEIGHT - 400;
 const float OBSTACLE_SPEED = 300;
 const float SCALE = 4;
 
+float OBSTACLE_WIDTH;
+float OBSTACLE_LENGTH;
 float tick;
 
 class Obstacle
@@ -24,6 +23,9 @@ class Obstacle
 public:
 	float x, y, gap;
 	static Texture obstacle_image;
+	static Rectangle obstacle_top_hitbox;
+	static Rectangle obstacle_bottom_hitbox;
+	static Rectangle obstacle_clear_hitbox;
 
 	Obstacle(float X = SCREEN_WIDTH, float Y = 0, float Gap = OBSTACLE_GAP)
 	{
@@ -49,12 +51,18 @@ public:
 
 std::list<Obstacle *> obstacles;
 Texture Obstacle::obstacle_image;
+Rectangle Obstacle::obstacle_top_hitbox;
+Rectangle Obstacle::obstacle_bottom_hitbox;
+Rectangle Obstacle::obstacle_clear_hitbox;
 
 class Whale
 {
 private:
 	std::vector<Texture> frames;
 	int currentFrame = 7;
+	int clear_count = 0;
+	bool clear_flag = false;
+	bool hit_flag = false;
 	float frameTimer = 0.0f;
 	Vector2 player_pos;
 	Vector2 player_vel;
@@ -124,6 +132,9 @@ public:
 	void Update(float deltaTime)
 	{
 		frameTimer += deltaTime;
+		bool collision_clear = CheckCollisionRecs(player_hitbox, Obstacle::obstacle_clear_hitbox);
+		bool collision_hit = (CheckCollisionRecs(player_hitbox, Obstacle::obstacle_top_hitbox) || CheckCollisionRecs(player_hitbox, Obstacle::obstacle_bottom_hitbox));
+
 		if (IsKeyPressed(KEY_SPACE))
 		{
 			currentFrame = 0;
@@ -134,12 +145,53 @@ public:
 			if (currentFrame < frames.size() - 1)
 				currentFrame++;
 		}
+
+		if (!clear_flag)
+		{
+			if (collision_clear)
+			{
+				clear_count++;
+				clear_flag = true;
+			}
+		}
+		else
+		{
+			// If we are already colliding, check to see if the player has left the area
+			if (!collision_clear)
+			{
+				clear_flag = false;
+			}
+			else
+			{
+				DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, GREEN);
+			}
+		}
+
+		if (!hit_flag)
+		{
+			if (collision_hit)
+			{
+				hit_flag = true;
+			}
+		}
+		else
+		{
+			// If we are already colliding, check to see if the player has left the area
+			if (!collision_hit)
+			{
+				hit_flag = false;
+			}
+			else
+			{
+				DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, RED);
+			}
+		}
 	}
 
 	void DrawJump()
 	{
-		DrawTextureEx(frames[currentFrame], player_pos, player_deg, SCALE, WHITE); 
-		DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, BLANK);  
+		DrawTextureEx(frames[currentFrame], player_pos, player_deg, SCALE, WHITE);
+		DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, Color{230, 41, 55, 127});
 	}
 
 	~Whale()
@@ -166,6 +218,8 @@ int main()
 	// Load a texture from the resources directory
 	Whale::Get().Animation();
 	Obstacle::obstacle_image = LoadTexture("art/sprites/whale2.png");
+	OBSTACLE_WIDTH = (float)Obstacle::obstacle_image.width * SCALE;
+	OBSTACLE_LENGTH = (float)Obstacle::obstacle_image.height * SCALE;
 
 	Obstacle *i = new Obstacle();
 	obstacles.push_back(i);
@@ -215,6 +269,12 @@ int main()
 			o->x -= OBSTACLE_SPEED * deltaTime;
 			DrawTextureEx(o->obstacle_image, {o->x, o->y}, 0.0f, SCALE, WHITE);
 			DrawTextureEx(o->obstacle_image, {o->x, o->y + o->gap}, 0.0f, -1 * SCALE, WHITE);
+			Obstacle::obstacle_top_hitbox = {o->x, o->y, OBSTACLE_WIDTH, OBSTACLE_LENGTH};
+			Obstacle::obstacle_bottom_hitbox = {o->x, o->y + o->gap, OBSTACLE_WIDTH, OBSTACLE_LENGTH};
+			Obstacle::obstacle_clear_hitbox = {o->x, o->y + OBSTACLE_LENGTH, OBSTACLE_WIDTH / SCALE, o->gap - OBSTACLE_LENGTH};
+			DrawRectangleRec(Obstacle::obstacle_top_hitbox, Color{230, 41, 55, 127});
+			DrawRectangleRec(Obstacle::obstacle_bottom_hitbox, Color{230, 41, 55, 127});
+			DrawRectangleRec(Obstacle::obstacle_clear_hitbox, Color{0, 228, 48, 127});
 		}
 
 		// end the frame and get ready for the next one  (display frame, poll input, etc...)
