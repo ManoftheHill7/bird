@@ -4,16 +4,24 @@
 
 #include <list>
 #include <vector>
+#include <random>
+#include <string>
 
+const bool DEBUG_RENDER = true;
 const float SCREEN_WIDTH = 1920;
 const float SCREEN_HEIGHT = 1080;
-const float OBSTACLE_GAP = SCREEN_HEIGHT - 400;
+const float OBSTACLE_GAP = 952;
 const float OBSTACLE_SPEED = 300;
 const float SCALE = 4;
 
-float OBSTACLE_WIDTH;
-float OBSTACLE_LENGTH;
-float tick;
+const int MARGIN = 20;
+const int FONT_SIZE = 40;
+
+float obstacle_width;
+float obstacle_length;
+int rand_width;
+int rand_gap;
+
 
 class Obstacle
 {
@@ -27,7 +35,7 @@ public:
 	static Rectangle obstacle_bottom_hitbox;
 	static Rectangle obstacle_clear_hitbox;
 
-	Obstacle(float X = SCREEN_WIDTH, float Y = 0, float Gap = OBSTACLE_GAP)
+	Obstacle(float X = SCREEN_WIDTH, float Y = -384.0f, float Gap = OBSTACLE_GAP)
 	{
 		x = X;
 		y = Y;
@@ -60,7 +68,7 @@ class Whale
 private:
 	std::vector<Texture> frames;
 	int currentFrame = 7;
-	int clear_count = 0;
+	u_int clear_count = 0;
 	bool clear_flag = false;
 	bool hit_flag = false;
 	float frameTimer = 0.0f;
@@ -100,7 +108,7 @@ public:
 		player_deg = std::min(player_deg, -20.0f);
 	}
 
-	void Move(float deltaTime)
+	Rectangle Move(float deltaTime)
 	{
 		player_vel.y += GRAVITY * deltaTime;
 		player_pos.y += player_vel.y * deltaTime;
@@ -127,16 +135,16 @@ public:
 		{
 			player_vel.y = std::min(player_vel.y, 0.0f);
 		}
+		return (player_hitbox);
 	}
 
-	void Update(float deltaTime)
+	unsigned int Update(float deltaTime, bool collision_clear, bool collision_hit)
 	{
 		frameTimer += deltaTime;
-		bool collision_clear = CheckCollisionRecs(player_hitbox, Obstacle::obstacle_clear_hitbox);
-		bool collision_hit = (CheckCollisionRecs(player_hitbox, Obstacle::obstacle_top_hitbox) || CheckCollisionRecs(player_hitbox, Obstacle::obstacle_bottom_hitbox));
 
 		if (IsKeyPressed(KEY_SPACE))
 		{
+			Whale::Get().Jump();
 			currentFrame = 0;
 		}
 		if (frameTimer >= 0.1)
@@ -146,6 +154,7 @@ public:
 				currentFrame++;
 		}
 
+		// For when the player enters the gap
 		if (!clear_flag)
 		{
 			if (collision_clear)
@@ -163,10 +172,14 @@ public:
 			}
 			else
 			{
-				DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, GREEN);
+				if (DEBUG_RENDER)
+				{
+					DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, GREEN);
+				}
 			}
 		}
 
+		// For when the player hits an obstacle
 		if (!hit_flag)
 		{
 			if (collision_hit)
@@ -183,15 +196,23 @@ public:
 			}
 			else
 			{
-				DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, RED);
+				if (DEBUG_RENDER)
+				{
+					DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, RED);
+				}
 			}
 		}
+		return (clear_count);
 	}
 
-	void DrawJump()
+	void DrawWhale()
 	{
 		DrawTextureEx(frames[currentFrame], player_pos, player_deg, SCALE, WHITE);
-		DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, Color{230, 41, 55, 127});
+
+		if (DEBUG_RENDER)
+		{
+			DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, Color{230, 41, 55, 127});
+		}
 	}
 
 	~Whale()
@@ -206,6 +227,11 @@ public:
 
 int main()
 {
+	unsigned int clear_count;
+	bool collision_clear;
+	bool collision_hit;
+	Rectangle player_hitbox;
+
 	// Tell the window to use vsync and work on high DPI displays
 	SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI);
 
@@ -217,35 +243,32 @@ int main()
 
 	// Load a texture from the resources directory
 	Whale::Get().Animation();
-	Obstacle::obstacle_image = LoadTexture("art/sprites/whale2.png");
-	OBSTACLE_WIDTH = (float)Obstacle::obstacle_image.width * SCALE;
-	OBSTACLE_LENGTH = (float)Obstacle::obstacle_image.height * SCALE;
+	Obstacle::obstacle_image = LoadTexture("art/sprites/rock.png");
+	obstacle_width = (float)Obstacle::obstacle_image.width * SCALE;
+	obstacle_length = (float)Obstacle::obstacle_image.height * SCALE;
 
 	Obstacle *i = new Obstacle();
 	obstacles.push_back(i);
+
+	// Generate random number
+	std::random_device dev;
+	std::mt19937 rng(dev());
+	std::uniform_int_distribution<std::mt19937::result_type> obstacle_distribution(0, 384);
 
 	// game loop
 	while (!WindowShouldClose()) // run the loop until the user presses ESCAPE or presses the Close button on the window
 	{
 		float deltaTime = GetFrameTime();
-		tick += deltaTime;
-		// Obstacle::Update(deltaTime, tick);
-		Whale::Get().Update(deltaTime);
-		Whale::Get().Move(deltaTime);
 
-		if (IsKeyPressed(KEY_SPACE))
-		{
-			Whale::Get().Jump();
-		}
+		player_hitbox = Whale::Get().Move(deltaTime);
 
-		if (tick > 5)
+		if ((obstacles.back()->x < SCREEN_WIDTH * 3 / 4))
 		{
-			Obstacle *n = new Obstacle();
+			Obstacle *n = new Obstacle(SCREEN_WIDTH, obstacle_distribution(rng) * -1.0f, OBSTACLE_GAP);
 			obstacles.push_back(n);
-			tick = 0;
 		}
 
-		if ((obstacles.front()->x < 0 - OBSTACLE_WIDTH) && (obstacles.size() > 1))
+		if (obstacles.front()->x < 0 - obstacle_width)
 		{
 			Obstacle *front = obstacles.front();
 			delete front;
@@ -261,21 +284,45 @@ int main()
 		// draw some text using the default font
 		// DrawText(screen_dimensions, 200,200,20,WHITE);
 		// DrawText(character_loc_ptn_text, 600,200,20,WHITE);
-		DrawFPS(100.0f, 100.0f);
 
-		Whale::Get().DrawJump();
+		// DrawFPS(100.0f, 100.0f);
+
+		collision_clear = false;
+		collision_hit = false;
 		for (Obstacle *o : obstacles)
 		{
 			o->x -= OBSTACLE_SPEED * deltaTime;
 			DrawTextureEx(o->obstacle_image, {o->x, o->y}, 0.0f, SCALE, WHITE);
-			DrawTextureEx(o->obstacle_image, {o->x, o->y + o->gap}, 0.0f, -1 * SCALE, WHITE);
-			Obstacle::obstacle_top_hitbox = {o->x, o->y, OBSTACLE_WIDTH, OBSTACLE_LENGTH};
-			Obstacle::obstacle_bottom_hitbox = {o->x, o->y + o->gap, OBSTACLE_WIDTH, OBSTACLE_LENGTH};
-			Obstacle::obstacle_clear_hitbox = {o->x, o->y + OBSTACLE_LENGTH, OBSTACLE_WIDTH / SCALE, o->gap - OBSTACLE_LENGTH};
-			DrawRectangleRec(Obstacle::obstacle_top_hitbox, Color{230, 41, 55, 127});
-			DrawRectangleRec(Obstacle::obstacle_bottom_hitbox, Color{230, 41, 55, 127});
-			DrawRectangleRec(Obstacle::obstacle_clear_hitbox, Color{0, 228, 48, 127});
+			DrawTextureEx(o->obstacle_image, {o->x, o->y + o->gap}, 0.0f, SCALE, WHITE);
+			Obstacle::obstacle_top_hitbox = {o->x, o->y, obstacle_width, obstacle_length};
+			Obstacle::obstacle_bottom_hitbox = {o->x, o->y + o->gap, obstacle_width, obstacle_length};
+			Obstacle::obstacle_clear_hitbox = {o->x + obstacle_width * 3 / 4, o->y + obstacle_length, obstacle_width / SCALE, o->gap - obstacle_length};
+
+			if (CheckCollisionRecs(player_hitbox, Obstacle::obstacle_clear_hitbox))
+			{
+				collision_clear = true;
+			}
+			if (CheckCollisionRecs(player_hitbox, Obstacle::obstacle_top_hitbox) || CheckCollisionRecs(player_hitbox, Obstacle::obstacle_bottom_hitbox))
+			{
+				collision_hit = true;
+			}
+
+			//Debug
+			if (DEBUG_RENDER && collision_clear)
+			{
+				DrawRectangleRec(Obstacle::obstacle_clear_hitbox, Color{0, 228, 48, 127});
+			}
+			if (DEBUG_RENDER && collision_hit)
+			{
+				DrawRectangleRec(Obstacle::obstacle_top_hitbox, Color{230, 41, 55, 127});
+				DrawRectangleRec(Obstacle::obstacle_bottom_hitbox, Color{230, 41, 55, 127});
+			}
 		}
+
+		Whale::Get().DrawWhale();
+		clear_count = Whale::Get().Update(deltaTime, collision_clear, collision_hit);
+
+		DrawText(TextFormat("Cleared: %u", clear_count), MARGIN, MARGIN - 5, FONT_SIZE, YELLOW);
 
 		// end the frame and get ready for the next one  (display frame, poll input, etc...)
 		EndDrawing();
