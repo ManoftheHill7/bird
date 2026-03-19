@@ -2,6 +2,7 @@
 #include "resource_dir.h" // utility header for SearchAndSetResourceDir
 #include "player.h"
 
+#include <iostream>
 #include <list>
 #include <vector>
 #include <random>
@@ -12,7 +13,7 @@ const float SCREEN_WIDTH = 1920;
 const float SCREEN_HEIGHT = 1080;
 const float OBSTACLE_GAP = 952;
 const float OBSTACLE_SPEED = 300;
-const float SCALE = 4;
+const float SCALE = 5;
 
 const int MARGIN = 20;
 const int FONT_SIZE = 40;
@@ -21,7 +22,6 @@ float obstacle_width;
 float obstacle_length;
 int rand_width;
 int rand_gap;
-
 
 class Obstacle
 {
@@ -68,7 +68,6 @@ class Whale
 private:
 	std::vector<Texture> frames;
 	int currentFrame = 7;
-	u_int clear_count = 0;
 	bool clear_flag = false;
 	bool hit_flag = false;
 	float frameTimer = 0.0f;
@@ -138,7 +137,7 @@ public:
 		return (player_hitbox);
 	}
 
-	unsigned int Update(float deltaTime, bool collision_clear, bool collision_hit)
+	unsigned int Update(float deltaTime, unsigned int clear_count, bool collision_clear, bool collision_hit, Sound clear_sfx, Sound hit_sfx)
 	{
 		frameTimer += deltaTime;
 
@@ -160,6 +159,7 @@ public:
 			if (collision_clear)
 			{
 				clear_count++;
+				PlaySound(clear_sfx);
 				clear_flag = true;
 			}
 		}
@@ -184,6 +184,7 @@ public:
 		{
 			if (collision_hit)
 			{
+				PlaySound(hit_sfx);
 				hit_flag = true;
 			}
 		}
@@ -225,9 +226,20 @@ public:
 	}
 };
 
+void GameReset()
+{
+	for (Obstacle *obs : obstacles)
+	{
+		delete obs;
+	}
+	obstacles.clear();
+	Obstacle *j = new Obstacle();
+	obstacles.push_back(j);
+};
+
 int main()
 {
-	unsigned int clear_count;
+	unsigned int clear_count = 0;
 	bool collision_clear;
 	bool collision_hit;
 	Rectangle player_hitbox;
@@ -240,6 +252,32 @@ int main()
 
 	// Utility function from resource_dir.h to find the resources folder and set it as the current working directory so we can load from it
 	SearchAndSetResourceDir("assets");
+
+	// Load local high score
+	unsigned int high_score = 0;
+	int bytesRead = 0;
+	unsigned char *loadedData = LoadFileData("high_score.bin", &bytesRead);
+	if (loadedData == nullptr)
+	{
+		std::cout << "No save found. Making high_score.bin file!" << std::endl;
+	}
+	else
+	{
+		high_score = *(unsigned int *)loadedData;
+	}
+	UnloadFileData(loadedData);
+
+	// Load sounds
+	SetAudioStreamBufferSizeDefault(8192);
+	InitAudioDevice();
+	Music bgm = LoadMusicStream("sfx/music.ogg");
+	Sound clear_sfx = LoadSound("sfx/da_ding.wav");
+	Sound hit_sfx = LoadSound("sfx/thump.wav");
+
+	// Set background music
+	bgm.looping = true;
+	SetMusicVolume(bgm, 0.25);
+	PlayMusicStream(bgm);
 
 	// Load a texture from the resources directory
 	Whale::Get().Animation();
@@ -258,11 +296,22 @@ int main()
 	// game loop
 	while (!WindowShouldClose()) // run the loop until the user presses ESCAPE or presses the Close button on the window
 	{
+		if (collision_hit)
+		{
+			if (high_score < clear_count)
+			{
+				high_score = clear_count;
+			}
+			GameReset();
+			clear_count = 0;
+		}
+
+		UpdateMusicStream(bgm);
 		float deltaTime = GetFrameTime();
 
 		player_hitbox = Whale::Get().Move(deltaTime);
 
-		if ((obstacles.back()->x < SCREEN_WIDTH * 3 / 4))
+		if ((obstacles.back()->x < SCREEN_WIDTH * 2 / 3))
 		{
 			Obstacle *n = new Obstacle(SCREEN_WIDTH, obstacle_distribution(rng) * -1.0f, OBSTACLE_GAP);
 			obstacles.push_back(n);
@@ -296,7 +345,7 @@ int main()
 			DrawTextureEx(o->obstacle_image, {o->x, o->y + o->gap}, 0.0f, SCALE, WHITE);
 			Obstacle::obstacle_top_hitbox = {o->x, o->y, obstacle_width, obstacle_length};
 			Obstacle::obstacle_bottom_hitbox = {o->x, o->y + o->gap, obstacle_width, obstacle_length};
-			Obstacle::obstacle_clear_hitbox = {o->x + obstacle_width * 3 / 4, o->y + obstacle_length, obstacle_width / SCALE, o->gap - obstacle_length};
+			Obstacle::obstacle_clear_hitbox = {o->x + obstacle_width * (SCALE - 1) / SCALE, o->y + obstacle_length, obstacle_width / SCALE, o->gap - obstacle_length};
 
 			if (CheckCollisionRecs(player_hitbox, Obstacle::obstacle_clear_hitbox))
 			{
@@ -307,7 +356,7 @@ int main()
 				collision_hit = true;
 			}
 
-			//Debug
+			// Debug
 			if (DEBUG_RENDER && collision_clear)
 			{
 				DrawRectangleRec(Obstacle::obstacle_clear_hitbox, Color{0, 228, 48, 127});
@@ -320,19 +369,29 @@ int main()
 		}
 
 		Whale::Get().DrawWhale();
-		clear_count = Whale::Get().Update(deltaTime, collision_clear, collision_hit);
+		clear_count = Whale::Get().Update(deltaTime, clear_count, collision_clear, collision_hit, clear_sfx, hit_sfx);
 
-		DrawText(TextFormat("Cleared: %u", clear_count), MARGIN, MARGIN - 5, FONT_SIZE, YELLOW);
+		DrawText(TextFormat("High Score: %u", high_score), MARGIN, MARGIN - 5, FONT_SIZE, GREEN);
+		DrawText(TextFormat("Cleared: %u", clear_count), MARGIN, MARGIN * 3, FONT_SIZE, YELLOW);
 
 		// end the frame and get ready for the next one  (display frame, poll input, etc...)
 		EndDrawing();
 	}
 
+	SaveFileData("high_score.bin", &high_score, sizeof(high_score));
+
 	// cleanup
 	// unload our texture so it can be cleaned up
-	Whale::Get().~Whale();
+	// Whale::Get().~Whale();
 	// Obstacle::UnloadObstacle;
 	UnloadTexture(Obstacle::obstacle_image);
+	StopMusicStream(bgm);
+
+	UnloadSound(clear_sfx);
+	UnloadSound(hit_sfx);
+	UnloadMusicStream(bgm);
+
+	CloseAudioDevice();
 
 	// destroy the window and cleanup the OpenGL context
 	CloseWindow();
