@@ -1,14 +1,12 @@
 #include "raylib.h"
 #include "resource_dir.h" // utility header for SearchAndSetResourceDir
-#include "player.h"
 
-#include <iostream>
 #include <list>
 #include <vector>
 #include <random>
 #include <string>
 
-const bool DEBUG_RENDER = true;
+const bool DEBUG_RENDER = false;
 const float SCREEN_WIDTH = 1920;
 const float SCREEN_HEIGHT = 1080;
 const float OBSTACLE_GAP = 952;
@@ -23,11 +21,18 @@ float obstacle_length;
 int rand_width;
 int rand_gap;
 
+bool pause = false;
+
+enum GameState
+{
+	MENU,
+	PLAYING,
+	GAME_OVER
+};
+GameState currentState = MENU;
+
 class Obstacle
 {
-	// private:
-	// 	float obstacle_tick;
-
 public:
 	float x, y, gap;
 	static Texture obstacle_image;
@@ -41,20 +46,6 @@ public:
 		y = Y;
 		gap = Gap;
 	}
-
-	// static void Image()
-	// {
-
-	// }
-
-	// static void Update(float deltaTime, float obstacle_tick)
-	// {
-
-	// }
-	// static void UnloadObstacle()
-	// {
-	// 	UnloadTexture(obstacle_image);
-	// }
 };
 
 std::list<Obstacle *> obstacles;
@@ -66,20 +57,24 @@ Rectangle Obstacle::obstacle_clear_hitbox;
 class Whale
 {
 private:
+	const float GRAVITY = 800.0;
 	std::vector<Texture> frames;
-	int currentFrame = 7;
+	int current_frame = 7;
 	bool clear_flag = false;
 	bool hit_flag = false;
 	float frameTimer = 0.0f;
 	Vector2 player_pos;
 	Vector2 player_vel;
+	Vector2 player_origin;
 	float player_deg;
-	Rectangle player_hitbox;
+	Rectangle source_rec;
+	Rectangle dest_rec;
 
 	Whale()
 	{
 		player_pos = {SCREEN_WIDTH / 3, SCREEN_HEIGHT / 2};
 		player_vel = {0.0f, 0.0f};
+		player_origin = {0.0f, 0.0f};
 		player_deg = 0;
 	}
 	Whale(const Whale &) = delete;
@@ -99,6 +94,8 @@ public:
 			// Build path: "art/sprites/whale[1-8].png"
 			frames.push_back(LoadTexture(TextFormat("art/sprites/whale%d.png", i)));
 		}
+		source_rec = {0.0f, 0.0f, (float)frames[0].width, (float)frames[0].height};
+		player_origin = {source_rec.width * SCALE / 2, source_rec.height * SCALE / 2};
 	}
 
 	void Jump()
@@ -109,12 +106,12 @@ public:
 
 	Rectangle Move(float deltaTime)
 	{
+		dest_rec = {player_pos.x, player_pos.y, frames[0].width * SCALE, frames[0].height * SCALE};
 		player_vel.y += GRAVITY * deltaTime;
 		player_pos.y += player_vel.y * deltaTime;
 		player_pos.y = std::min(player_pos.y, SCREEN_HEIGHT - frames[0].height * SCALE);
 		player_pos.y = std::max(player_pos.y, 0.0f);
 		player_deg += deltaTime * 100;
-		player_hitbox = {player_pos.x, player_pos.y, frames[0].width * SCALE, frames[0].height * SCALE};
 		if (player_vel.y < -200.0f)
 		{
 			player_deg = std::min(player_deg, -20.0f);
@@ -134,7 +131,7 @@ public:
 		{
 			player_vel.y = std::min(player_vel.y, 0.0f);
 		}
-		return (player_hitbox);
+		return (dest_rec);
 	}
 
 	unsigned int Update(float deltaTime, unsigned int clear_count, bool collision_clear, bool collision_hit, Sound clear_sfx, Sound hit_sfx)
@@ -144,13 +141,13 @@ public:
 		if (IsKeyPressed(KEY_SPACE))
 		{
 			Whale::Get().Jump();
-			currentFrame = 0;
+			current_frame = 0;
 		}
 		if (frameTimer >= 0.1)
 		{
 			frameTimer = 0.0f;
-			if (currentFrame < frames.size() - 1)
-				currentFrame++;
+			if (current_frame < frames.size() - 1)
+				current_frame++;
 		}
 
 		// For when the player enters the gap
@@ -174,7 +171,7 @@ public:
 			{
 				if (DEBUG_RENDER)
 				{
-					DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, GREEN);
+					DrawCircle(dest_rec.x, dest_rec.y, dest_rec.height / 2, GREEN);
 				}
 			}
 		}
@@ -199,7 +196,7 @@ public:
 			{
 				if (DEBUG_RENDER)
 				{
-					DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, RED);
+					DrawCircle(dest_rec.x, dest_rec.y, dest_rec.height / 2, RED);
 				}
 			}
 		}
@@ -208,12 +205,19 @@ public:
 
 	void DrawWhale()
 	{
-		DrawTextureEx(frames[currentFrame], player_pos, player_deg, SCALE, WHITE);
+		DrawTexturePro(frames[current_frame], source_rec, dest_rec, player_origin, player_deg, WHITE);
 
 		if (DEBUG_RENDER)
 		{
-			DrawRectanglePro(player_hitbox, {0.0f, 0.0f}, player_deg, Color{230, 41, 55, 127});
+			DrawCircle(dest_rec.x, dest_rec.y, dest_rec.height / 2, Color{230, 41, 55, 127});
 		}
+	}
+
+	void Reset()
+	{
+		player_pos = {SCREEN_WIDTH / 3, SCREEN_HEIGHT / 2 - frames[0].height * SCALE};
+		player_vel = {0.0f, 0.0f};
+		player_deg = 0;
 	}
 
 	~Whale()
@@ -226,8 +230,11 @@ public:
 	}
 };
 
-void GameReset()
+void GameReset(Music music)
 {
+	StopMusicStream(music);
+	PlayMusicStream(music);
+	Whale::Get().Reset();
 	for (Obstacle *obs : obstacles)
 	{
 		delete obs;
@@ -259,7 +266,7 @@ int main()
 	unsigned char *loadedData = LoadFileData("high_score.bin", &bytesRead);
 	if (loadedData == nullptr)
 	{
-		std::cout << "No save found. Making high_score.bin file!" << std::endl;
+		printf("No high score file found. Making high_score.bin on shutdown.\n");
 	}
 	else
 	{
@@ -276,7 +283,7 @@ int main()
 
 	// Set background music
 	bgm.looping = true;
-	SetMusicVolume(bgm, 0.25);
+	SetMusicVolume(bgm, 0.1);
 	PlayMusicStream(bgm);
 
 	// Load a texture from the resources directory
@@ -296,32 +303,71 @@ int main()
 	// game loop
 	while (!WindowShouldClose()) // run the loop until the user presses ESCAPE or presses the Close button on the window
 	{
-		if (collision_hit)
+		// Switch between Menu, Playing, and Game Over game states
+		switch (currentState)
 		{
-			if (high_score < clear_count)
+		case MENU:
+			if (IsKeyPressed(KEY_SPACE))
 			{
-				high_score = clear_count;
+				GameReset(bgm);
+				clear_count = 0;
+				currentState = PLAYING;
 			}
-			GameReset();
-			clear_count = 0;
-		}
+			break;
 
-		UpdateMusicStream(bgm);
-		float deltaTime = GetFrameTime();
+		case PLAYING:
+			if (IsKeyPressed(KEY_P))
+			{
+				pause = !pause;
+			}
 
-		player_hitbox = Whale::Get().Move(deltaTime);
+			// Game logic updates while not paused
+			if (!pause)
+			{
+				UpdateMusicStream(bgm);
+				float deltaTime = GetFrameTime();
 
-		if ((obstacles.back()->x < SCREEN_WIDTH * 2 / 3))
-		{
-			Obstacle *n = new Obstacle(SCREEN_WIDTH, obstacle_distribution(rng) * -1.0f, OBSTACLE_GAP);
-			obstacles.push_back(n);
-		}
+				player_hitbox = Whale::Get().Move(deltaTime);
 
-		if (obstacles.front()->x < 0 - obstacle_width)
-		{
-			Obstacle *front = obstacles.front();
-			delete front;
-			obstacles.pop_front();
+				if ((obstacles.back()->x < SCREEN_WIDTH * 2 / 3))
+				{
+					Obstacle *n = new Obstacle(SCREEN_WIDTH, obstacle_distribution(rng) * -1.0f, OBSTACLE_GAP);
+					obstacles.push_back(n);
+				}
+
+				if (obstacles.front()->x < 0 - obstacle_width)
+				{
+					Obstacle *front = obstacles.front();
+					delete front;
+					obstacles.pop_front();
+				}
+
+				for (Obstacle *o : obstacles)
+				{
+					o->x -= OBSTACLE_SPEED * deltaTime;
+				}
+
+				if (collision_hit)
+				{
+					if (high_score < clear_count)
+					{
+						high_score = clear_count;
+					}
+					currentState = GAME_OVER;
+				}
+
+				clear_count = Whale::Get().Update(deltaTime, clear_count, collision_clear, collision_hit, clear_sfx, hit_sfx);
+			}
+			break;
+
+		case GAME_OVER:
+			if (IsKeyPressed(KEY_ENTER))
+			{
+				GameReset(bgm);
+				clear_count = 0;
+				currentState = PLAYING;
+			}
+			break;
 		}
 
 		// drawing
@@ -329,50 +375,68 @@ int main()
 
 		// Setup the back buffer for drawing (clear color and depth buffers)
 		ClearBackground(BLUE);
-
-		// draw some text using the default font
-		// DrawText(screen_dimensions, 200,200,20,WHITE);
-		// DrawText(character_loc_ptn_text, 600,200,20,WHITE);
-
-		// DrawFPS(100.0f, 100.0f);
-
-		collision_clear = false;
-		collision_hit = false;
-		for (Obstacle *o : obstacles)
+		if (currentState != MENU)
 		{
-			o->x -= OBSTACLE_SPEED * deltaTime;
-			DrawTextureEx(o->obstacle_image, {o->x, o->y}, 0.0f, SCALE, WHITE);
-			DrawTextureEx(o->obstacle_image, {o->x, o->y + o->gap}, 0.0f, SCALE, WHITE);
-			Obstacle::obstacle_top_hitbox = {o->x, o->y, obstacle_width, obstacle_length};
-			Obstacle::obstacle_bottom_hitbox = {o->x, o->y + o->gap, obstacle_width, obstacle_length};
-			Obstacle::obstacle_clear_hitbox = {o->x + obstacle_width * (SCALE - 1) / SCALE, o->y + obstacle_length, obstacle_width / SCALE, o->gap - obstacle_length};
+			collision_clear = false;
+			collision_hit = false;
+			for (Obstacle *o : obstacles)
+			{
+				DrawTextureEx(o->obstacle_image, {o->x, o->y}, 0.0f, SCALE, WHITE);
+				DrawTextureEx(o->obstacle_image, {o->x, o->y + o->gap}, 0.0f, SCALE, WHITE);
+				Obstacle::obstacle_top_hitbox = {o->x, o->y, obstacle_width, obstacle_length};
+				Obstacle::obstacle_bottom_hitbox = {o->x, o->y + o->gap, obstacle_width, obstacle_length};
+				Obstacle::obstacle_clear_hitbox = {o->x + obstacle_width * (SCALE - 1) / SCALE, o->y + obstacle_length, obstacle_width / SCALE, o->gap - obstacle_length};
 
-			if (CheckCollisionRecs(player_hitbox, Obstacle::obstacle_clear_hitbox))
-			{
-				collision_clear = true;
-			}
-			if (CheckCollisionRecs(player_hitbox, Obstacle::obstacle_top_hitbox) || CheckCollisionRecs(player_hitbox, Obstacle::obstacle_bottom_hitbox))
-			{
-				collision_hit = true;
+				if (CheckCollisionCircleRec({player_hitbox.x, player_hitbox.y}, player_hitbox.height / 2, Obstacle::obstacle_clear_hitbox))
+				{
+					collision_clear = true;
+				}
+
+				if (CheckCollisionCircleRec({player_hitbox.x, player_hitbox.y}, player_hitbox.height / 2, Obstacle::obstacle_top_hitbox) || CheckCollisionCircleRec({player_hitbox.x, player_hitbox.y}, player_hitbox.height / 2, Obstacle::obstacle_bottom_hitbox))
+				{
+					collision_hit = true;
+				}
+
+				// Debug
+				if (DEBUG_RENDER && collision_clear)
+				{
+					DrawRectangleRec(Obstacle::obstacle_clear_hitbox, Color{0, 228, 48, 127});
+				}
+				if (DEBUG_RENDER && collision_hit)
+				{
+					DrawRectangleRec(Obstacle::obstacle_top_hitbox, Color{230, 41, 55, 127});
+					DrawRectangleRec(Obstacle::obstacle_bottom_hitbox, Color{230, 41, 55, 127});
+				}
 			}
 
-			// Debug
-			if (DEBUG_RENDER && collision_clear)
-			{
-				DrawRectangleRec(Obstacle::obstacle_clear_hitbox, Color{0, 228, 48, 127});
-			}
-			if (DEBUG_RENDER && collision_hit)
-			{
-				DrawRectangleRec(Obstacle::obstacle_top_hitbox, Color{230, 41, 55, 127});
-				DrawRectangleRec(Obstacle::obstacle_bottom_hitbox, Color{230, 41, 55, 127});
-			}
+			Whale::Get().DrawWhale();
+
+			DrawText(TextFormat("High Score: %u", high_score), MARGIN, MARGIN - 5, FONT_SIZE, GREEN);
+			DrawText(TextFormat("Cleared: %u", clear_count), MARGIN, MARGIN * 3, FONT_SIZE, YELLOW);
 		}
 
-		Whale::Get().DrawWhale();
-		clear_count = Whale::Get().Update(deltaTime, clear_count, collision_clear, collision_hit, clear_sfx, hit_sfx);
-
-		DrawText(TextFormat("High Score: %u", high_score), MARGIN, MARGIN - 5, FONT_SIZE, GREEN);
-		DrawText(TextFormat("Cleared: %u", clear_count), MARGIN, MARGIN * 3, FONT_SIZE, YELLOW);
+		// Overlays
+		if (currentState == MENU)
+		{
+			DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Fade(BLACK, 0.4f));
+			DrawText("FLOPPY WHALE", SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50, 60, WHITE);
+			DrawText("Press SPACE to start", SCREEN_WIDTH / 2 - 140, SCREEN_HEIGHT / 2 + 30, 20, LIGHTGRAY);
+		}
+		else if (currentState == GAME_OVER)
+		{
+			DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Fade(RED, 0.5f));
+			DrawText("GAME OVER", SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT / 2 - 50, 50, WHITE);
+			DrawText(TextFormat("FINAL SCORE: %u", clear_count), SCREEN_WIDTH / 2 - 80, SCREEN_HEIGHT / 2 + 10, 25, YELLOW);
+			DrawText("Press ENTER to try again", SCREEN_WIDTH / 2 - 110, SCREEN_HEIGHT / 2 + 60, 20, RAYWHITE);
+			DrawText("Press ESC to give up", SCREEN_WIDTH / 2 - 110, SCREEN_HEIGHT / 2 + 100, 20, RAYWHITE);
+		}
+		else if (pause)
+		{
+			// Draw a semi-transparent black rectangle over the whole screen
+			DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Fade(BLACK, 0.5f));
+			DrawText("PAUSED", SCREEN_WIDTH / 2 - 70, SCREEN_HEIGHT / 2 - 20, FONT_SIZE, WHITE);
+			DrawText("Press P to Resume", SCREEN_WIDTH / 2 - 110, SCREEN_HEIGHT / 2 + 30, 20, LIGHTGRAY);
+		}
 
 		// end the frame and get ready for the next one  (display frame, poll input, etc...)
 		EndDrawing();
