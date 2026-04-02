@@ -63,6 +63,8 @@ private:
 	bool clear_flag = false;
 	bool hit_flag = false;
 	float frameTimer = 0.0f;
+	float player_maxdeg = -30.0;
+	float player_mindeg = 90.0;
 	Vector2 player_pos;
 	Vector2 player_vel;
 	Vector2 player_origin;
@@ -87,7 +89,7 @@ public:
 		return instance;
 	}
 
-	void Animation()
+	void Frames()
 	{
 		for (int i = 1; i < 9; i++)
 		{
@@ -101,7 +103,7 @@ public:
 	void Jump()
 	{
 		player_vel.y -= 800.0f;
-		player_deg = std::min(player_deg, -20.0f);
+		player_deg = std::min(player_deg, player_maxdeg);
 	}
 
 	Rectangle Move(float deltaTime)
@@ -109,29 +111,39 @@ public:
 		dest_rec = {player_pos.x, player_pos.y, frames[0].width * SCALE, frames[0].height * SCALE};
 		player_vel.y += GRAVITY * deltaTime;
 		player_pos.y += player_vel.y * deltaTime;
-		player_pos.y = std::min(player_pos.y, SCREEN_HEIGHT - frames[0].height * SCALE);
-		player_pos.y = std::max(player_pos.y, 0.0f);
+		player_pos.y = std::min(player_pos.y, SCREEN_HEIGHT - dest_rec.height);
+		player_pos.y = std::max(player_pos.y, dest_rec.height / 2);
 		player_deg += deltaTime * 100;
 		if (player_vel.y < -200.0f)
 		{
-			player_deg = std::min(player_deg, -20.0f);
+			player_deg = std::min(player_deg, player_maxdeg);
 		}
 		else
 		{
-			player_deg = std::min(player_deg, 80.0f);
+			player_deg = std::min(player_deg, player_mindeg);
 		}
-		player_deg = std::max(player_deg, -20.0f);
+		player_deg = std::max(player_deg, player_maxdeg);
 
-		if (player_pos.y == 0)
+		if (player_pos.y == dest_rec.height / 2)
 		{
 			player_vel.y = 0;
 		}
 
-		if (player_pos.y == SCREEN_HEIGHT - frames[0].height * SCALE)
+		if (player_pos.y == SCREEN_HEIGHT - dest_rec.height)
 		{
 			player_vel.y = std::min(player_vel.y, 0.0f);
 		}
 		return (dest_rec);
+	}
+
+	void Animation()
+	{
+		if (frameTimer >= 0.1)
+		{
+			frameTimer = 0.0f;
+			if (current_frame < frames.size() - 1)
+				current_frame++;
+		}
 	}
 
 	unsigned int Update(float deltaTime, unsigned int clear_count, bool collision_clear, bool collision_hit, Sound clear_sfx, Sound hit_sfx)
@@ -143,12 +155,7 @@ public:
 			Whale::Get().Jump();
 			current_frame = 0;
 		}
-		if (frameTimer >= 0.1)
-		{
-			frameTimer = 0.0f;
-			if (current_frame < frames.size() - 1)
-				current_frame++;
-		}
+		Whale::Get().Animation();
 
 		// For when the player enters the gap
 		if (!clear_flag)
@@ -171,7 +178,7 @@ public:
 			{
 				if (DEBUG_RENDER)
 				{
-					DrawCircle(dest_rec.x, dest_rec.y, dest_rec.height / 2, GREEN);
+					DrawCircle(dest_rec.x, dest_rec.y, dest_rec.height * 2 / 5, GREEN);
 				}
 			}
 		}
@@ -196,7 +203,7 @@ public:
 			{
 				if (DEBUG_RENDER)
 				{
-					DrawCircle(dest_rec.x, dest_rec.y, dest_rec.height / 2, RED);
+					DrawCircle(dest_rec.x, dest_rec.y, dest_rec.height * 2 / 5, RED);
 				}
 			}
 		}
@@ -209,13 +216,13 @@ public:
 
 		if (DEBUG_RENDER)
 		{
-			DrawCircle(dest_rec.x, dest_rec.y, dest_rec.height / 2, Color{230, 41, 55, 127});
+			DrawCircle(dest_rec.x, dest_rec.y, dest_rec.height * 2 / 5, Color{230, 41, 55, 127});
 		}
 	}
 
 	void Reset()
 	{
-		player_pos = {SCREEN_WIDTH / 3, SCREEN_HEIGHT / 2 - frames[0].height * SCALE};
+		player_pos = {SCREEN_WIDTH / 3, SCREEN_HEIGHT / 2 - dest_rec.height};
 		player_vel = {0.0f, 0.0f};
 		player_deg = 0;
 	}
@@ -230,7 +237,7 @@ public:
 	}
 };
 
-void GameReset(Music music)
+void GameReset(Music music, uint_fast32_t rng)
 {
 	StopMusicStream(music);
 	PlayMusicStream(music);
@@ -240,7 +247,7 @@ void GameReset(Music music)
 		delete obs;
 	}
 	obstacles.clear();
-	Obstacle *j = new Obstacle();
+	Obstacle *j = new Obstacle(SCREEN_WIDTH, rng * -1.0f, OBSTACLE_GAP);
 	obstacles.push_back(j);
 };
 
@@ -283,17 +290,13 @@ int main()
 
 	// Set background music
 	bgm.looping = true;
-	SetMusicVolume(bgm, 0.1);
 	PlayMusicStream(bgm);
 
 	// Load a texture from the resources directory
-	Whale::Get().Animation();
+	Whale::Get().Frames();
 	Obstacle::obstacle_image = LoadTexture("art/sprites/rock.png");
-	obstacle_width = (float)Obstacle::obstacle_image.width * SCALE;
-	obstacle_length = (float)Obstacle::obstacle_image.height * SCALE;
-
-	Obstacle *i = new Obstacle();
-	obstacles.push_back(i);
+	obstacle_width = Obstacle::obstacle_image.width * SCALE;
+	obstacle_length = Obstacle::obstacle_image.height * SCALE;
 
 	// Generate random number
 	std::random_device dev;
@@ -309,7 +312,7 @@ int main()
 		case MENU:
 			if (IsKeyPressed(KEY_SPACE))
 			{
-				GameReset(bgm);
+				GameReset(bgm, obstacle_distribution(rng));
 				clear_count = 0;
 				currentState = PLAYING;
 			}
@@ -324,7 +327,7 @@ int main()
 			// Game logic updates while not paused
 			if (!pause)
 			{
-				UpdateMusicStream(bgm);
+				SetMusicVolume(bgm, 0.1);
 				float deltaTime = GetFrameTime();
 
 				player_hitbox = Whale::Get().Move(deltaTime);
@@ -358,12 +361,20 @@ int main()
 
 				clear_count = Whale::Get().Update(deltaTime, clear_count, collision_clear, collision_hit, clear_sfx, hit_sfx);
 			}
+			else
+			{
+				SetMusicVolume(bgm, 0.025);
+			}
+
+			UpdateMusicStream(bgm);
 			break;
 
 		case GAME_OVER:
+			SetMusicVolume(bgm, 0.025);
+			UpdateMusicStream(bgm);
 			if (IsKeyPressed(KEY_ENTER))
 			{
-				GameReset(bgm);
+				GameReset(bgm, obstacle_distribution(rng));
 				clear_count = 0;
 				currentState = PLAYING;
 			}
@@ -387,12 +398,12 @@ int main()
 				Obstacle::obstacle_bottom_hitbox = {o->x, o->y + o->gap, obstacle_width, obstacle_length};
 				Obstacle::obstacle_clear_hitbox = {o->x + obstacle_width * (SCALE - 1) / SCALE, o->y + obstacle_length, obstacle_width / SCALE, o->gap - obstacle_length};
 
-				if (CheckCollisionCircleRec({player_hitbox.x, player_hitbox.y}, player_hitbox.height / 2, Obstacle::obstacle_clear_hitbox))
+				if (CheckCollisionCircleRec({player_hitbox.x, player_hitbox.y}, player_hitbox.height * 2 / 5, Obstacle::obstacle_clear_hitbox))
 				{
 					collision_clear = true;
 				}
 
-				if (CheckCollisionCircleRec({player_hitbox.x, player_hitbox.y}, player_hitbox.height / 2, Obstacle::obstacle_top_hitbox) || CheckCollisionCircleRec({player_hitbox.x, player_hitbox.y}, player_hitbox.height / 2, Obstacle::obstacle_bottom_hitbox))
+				if (CheckCollisionCircleRec({player_hitbox.x, player_hitbox.y}, player_hitbox.height * 2 / 5, Obstacle::obstacle_top_hitbox) || CheckCollisionCircleRec({player_hitbox.x, player_hitbox.y}, player_hitbox.height * 2 / 5, Obstacle::obstacle_bottom_hitbox))
 				{
 					collision_hit = true;
 				}
