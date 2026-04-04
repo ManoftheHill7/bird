@@ -10,16 +10,11 @@ const bool DEBUG_RENDER = false;
 const float SCREEN_WIDTH = 1920;
 const float SCREEN_HEIGHT = 1080;
 const float OBSTACLE_GAP = 952;
-const float OBSTACLE_SPEED = 300;
+const float BASE_SPEED = 200;
 const float SCALE = 5;
-
-const int MARGIN = 20;
-const int FONT_SIZE = 40;
 
 float obstacle_width;
 float obstacle_length;
-int rand_width;
-int rand_gap;
 
 bool pause = false;
 
@@ -30,6 +25,13 @@ enum GameState
 	GAME_OVER
 };
 GameState currentState = MENU;
+
+struct Layer
+{
+	Texture2D tex;
+	float speedFactor; // 0.0 to 1.0
+	float currentX;
+};
 
 class Obstacle
 {
@@ -136,8 +138,10 @@ public:
 		return (dest_rec);
 	}
 
-	void Animation()
+	void Animation(float deltaTime)
 	{
+		frameTimer += deltaTime;
+
 		if (frameTimer >= 0.1)
 		{
 			frameTimer = 0.0f;
@@ -148,14 +152,12 @@ public:
 
 	unsigned int Update(float deltaTime, unsigned int clear_count, bool collision_clear, bool collision_hit, Sound clear_sfx, Sound hit_sfx)
 	{
-		frameTimer += deltaTime;
-
 		if (IsKeyPressed(KEY_SPACE))
 		{
 			Whale::Get().Jump();
 			current_frame = 0;
 		}
-		Whale::Get().Animation();
+		Whale::Get().Animation(deltaTime);
 
 		// For when the player enters the gap
 		if (!clear_flag)
@@ -257,6 +259,8 @@ int main()
 	bool collision_clear;
 	bool collision_hit;
 	Rectangle player_hitbox;
+	bool speed_flag = false;
+	float deltaSpeed = 1;
 
 	// Tell the window to use vsync and work on high DPI displays
 	SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI);
@@ -292,11 +296,19 @@ int main()
 	bgm.looping = true;
 	PlayMusicStream(bgm);
 
-	// Load a texture from the resources directory
+	// Load textures from the resources directory
 	Whale::Get().Frames();
+
 	Obstacle::obstacle_image = LoadTexture("art/sprites/rock.png");
 	obstacle_width = Obstacle::obstacle_image.width * SCALE;
 	obstacle_length = Obstacle::obstacle_image.height * SCALE;
+
+	std::vector<Layer> layers = {
+		{LoadTexture("art/background/water.png"), 0.2f, 0.0f},
+		// { LoadTexture("art/background/cave.png"), 0.15f, 0.0f },
+		// { LoadTexture("art/background/rocks.png"), 0.40f, 0.0f },
+		// { LoadTexture("art/background/sand.png"), 1.00f, 0.0f }
+	};
 
 	// Generate random number
 	std::random_device dev;
@@ -330,6 +342,36 @@ int main()
 				SetMusicVolume(bgm, 0.1);
 				float deltaTime = GetFrameTime();
 
+				// Slowly increases the speed by 10% every 10 cleared obstacles
+				if (!speed_flag)
+				{
+					if (clear_count > 0 && clear_count % 10 == 0)
+					{
+						deltaSpeed += 0.1f;
+						speed_flag = true;
+					}
+				}
+				else
+				{
+					if (!(clear_count % 10 == 0))
+					{
+						speed_flag = false;
+					}
+				}
+
+				float obstacle_speed = BASE_SPEED * deltaSpeed;
+
+				for (Layer &layer : layers)
+				{
+					layer.currentX -= (obstacle_speed * layer.speedFactor) * deltaTime;
+
+					// Reset when texture moves off-screen
+					if (layer.currentX <= -layer.tex.width * SCALE)
+					{
+						layer.currentX += layer.tex.width * SCALE;
+					}
+				}
+
 				player_hitbox = Whale::Get().Move(deltaTime);
 
 				if ((obstacles.back()->x < SCREEN_WIDTH * 2 / 3))
@@ -347,7 +389,7 @@ int main()
 
 				for (Obstacle *o : obstacles)
 				{
-					o->x -= OBSTACLE_SPEED * deltaTime;
+					o->x -= obstacle_speed * deltaTime;
 				}
 
 				if (collision_hit)
@@ -370,13 +412,24 @@ int main()
 			break;
 
 		case GAME_OVER:
+			float deltaTime = GetFrameTime();
+			player_hitbox = Whale::Get().Move(deltaTime);
+			Whale::Get().Animation(deltaTime);
 			SetMusicVolume(bgm, 0.025);
 			UpdateMusicStream(bgm);
-			if (IsKeyPressed(KEY_ENTER))
+			if (player_hitbox.y >= (SCREEN_HEIGHT - player_hitbox.width))
 			{
-				GameReset(bgm, obstacle_distribution(rng));
-				clear_count = 0;
-				currentState = PLAYING;
+				if (IsKeyPressed(KEY_SPACE))
+				{
+					GameReset(bgm, obstacle_distribution(rng));
+					for (Layer &layer : layers)
+					{
+						layer.currentX = 0.0f;
+					}
+					deltaSpeed = 1;
+					clear_count = 0;
+					currentState = PLAYING;
+				}
 			}
 			break;
 		}
@@ -385,7 +438,14 @@ int main()
 		BeginDrawing();
 
 		// Setup the back buffer for drawing (clear color and depth buffers)
-		ClearBackground(BLUE);
+		ClearBackground(WHITE);
+
+		for (Layer &layer : layers)
+		{
+			DrawTextureEx(layer.tex, {layer.currentX, 0}, 0.0f, SCALE, WHITE);
+			DrawTextureEx(layer.tex, {layer.currentX + layer.tex.width * SCALE, 0}, 0.0f, SCALE, WHITE);
+		}
+
 		if (currentState != MENU)
 		{
 			collision_clear = false;
@@ -396,7 +456,7 @@ int main()
 				DrawTextureEx(o->obstacle_image, {o->x, o->y + o->gap}, 0.0f, SCALE, WHITE);
 				Obstacle::obstacle_top_hitbox = {o->x, o->y, obstacle_width, obstacle_length};
 				Obstacle::obstacle_bottom_hitbox = {o->x, o->y + o->gap, obstacle_width, obstacle_length};
-				Obstacle::obstacle_clear_hitbox = {o->x + obstacle_width * (SCALE - 1) / SCALE, o->y + obstacle_length, obstacle_width / SCALE, o->gap - obstacle_length};
+				Obstacle::obstacle_clear_hitbox = {o->x + obstacle_width * (SCALE - 3) / SCALE, o->y + obstacle_length, obstacle_width / SCALE, o->gap - obstacle_length};
 
 				if (CheckCollisionCircleRec({player_hitbox.x, player_hitbox.y}, player_hitbox.height * 2 / 5, Obstacle::obstacle_clear_hitbox))
 				{
@@ -422,31 +482,61 @@ int main()
 
 			Whale::Get().DrawWhale();
 
-			DrawText(TextFormat("High Score: %u", high_score), MARGIN, MARGIN - 5, FONT_SIZE, GREEN);
-			DrawText(TextFormat("Cleared: %u", clear_count), MARGIN, MARGIN * 3, FONT_SIZE, YELLOW);
+			// Shadow
+			DrawText(TextFormat("Cleared: %u", clear_count), 20 + 6, 15 + 6, 75, Fade(BLACK, 0.5f));
+			// Text
+			DrawText(TextFormat("Cleared: %u", clear_count), 20, 15, 75, WHITE);
 		}
 
 		// Overlays
 		if (currentState == MENU)
 		{
-			DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Fade(BLACK, 0.4f));
-			DrawText("FLOPPY WHALE", SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT / 2 - 50, 60, WHITE);
-			DrawText("Press SPACE to start", SCREEN_WIDTH / 2 - 140, SCREEN_HEIGHT / 2 + 30, 20, LIGHTGRAY);
+			DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Fade(BLACK, 0.5f));
+			// Shadow
+			DrawText("FLOPPY WHALE", (SCREEN_WIDTH - MeasureText("FLOPPY WHALE", 150)) / 2 + 9, SCREEN_HEIGHT / 5 + 9, 150, Fade(BLACK, 0.5f));
+			DrawText("Press SPACE to start", (SCREEN_WIDTH - MeasureText("Press SPACE to start", 50)) / 2 + 6, SCREEN_HEIGHT / 2 + 6, 50, Fade(BLACK, 0.5f));
+			// Text
+			DrawText("FLOPPY WHALE", (SCREEN_WIDTH - MeasureText("FLOPPY WHALE", 150)) / 2, SCREEN_HEIGHT / 5, 150, SKYBLUE);
+			DrawText("Press SPACE to start", (SCREEN_WIDTH - MeasureText("Press SPACE to start", 50)) / 2, SCREEN_HEIGHT / 2, 50, LIGHTGRAY);
 		}
 		else if (currentState == GAME_OVER)
 		{
-			DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Fade(RED, 0.5f));
-			DrawText("GAME OVER", SCREEN_WIDTH / 2 - 100, SCREEN_HEIGHT / 2 - 50, 50, WHITE);
-			DrawText(TextFormat("FINAL SCORE: %u", clear_count), SCREEN_WIDTH / 2 - 80, SCREEN_HEIGHT / 2 + 10, 25, YELLOW);
-			DrawText("Press ENTER to try again", SCREEN_WIDTH / 2 - 110, SCREEN_HEIGHT / 2 + 60, 20, RAYWHITE);
-			DrawText("Press ESC to give up", SCREEN_WIDTH / 2 - 110, SCREEN_HEIGHT / 2 + 100, 20, RAYWHITE);
+			DrawCircleGradient(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, SCREEN_WIDTH * 3 / 5, Fade(RED, 0.4f), ColorBrightness(RED, -0.5f));
+
+			if (player_hitbox.y >= (SCREEN_HEIGHT - player_hitbox.width))
+			{
+				// Shadow
+				DrawText("GAME OVER", (SCREEN_WIDTH - MeasureText("GAME OVER", 150)) / 2 + 9, SCREEN_HEIGHT / 5 + 9, 150, Fade(BLACK, 0.5f));
+				DrawText(TextFormat("FINAL SCORE: %u", clear_count), (SCREEN_WIDTH - MeasureText(TextFormat("FINAL SCORE: %u", clear_count), 75)) / 2 + 6, SCREEN_HEIGHT * 2 / 5 + 6, 75, Fade(BLACK, 0.5f));
+				DrawText("Press SPACE to try again", (SCREEN_WIDTH - MeasureText("Press SPACE to try again", 50)) / 2 + 6, SCREEN_HEIGHT / 2 + 86, 50, Fade(BLACK, 0.5f));
+				DrawText("Press ESC to give up", (SCREEN_WIDTH - MeasureText("Press ESC to give up", 50)) / 2 + 6, SCREEN_HEIGHT / 2 + 146, 50, Fade(BLACK, 0.5f));
+				// Text
+				DrawText("GAME OVER", (SCREEN_WIDTH - MeasureText("GAME OVER", 150)) / 2, SCREEN_HEIGHT / 5, 150, WHITE);
+				DrawText(TextFormat("FINAL SCORE: %u", clear_count), (SCREEN_WIDTH - MeasureText(TextFormat("FINAL SCORE: %u", clear_count), 75)) / 2, SCREEN_HEIGHT * 2 / 5, 75, YELLOW);
+				DrawText("Press SPACE to try again", (SCREEN_WIDTH - MeasureText("Press SPACE to try again", 50)) / 2, SCREEN_HEIGHT / 2 + 80, 50, LIGHTGRAY);
+				DrawText("Press ESC to give up", (SCREEN_WIDTH - MeasureText("Press ESC to give up", 50)) / 2, SCREEN_HEIGHT / 2 + 140, 50, LIGHTGRAY);
+
+				if (clear_count != high_score || clear_count == 0)
+				{
+					DrawText(TextFormat("HIGH SCORE: %u", high_score), (SCREEN_WIDTH - MeasureText(TextFormat("HIGH SCORE: %u", high_score), 75)) / 2 + 6, SCREEN_HEIGHT * 2 / 5 + 90 + 6, 75, Fade(BLACK, 0.5f));
+					DrawText(TextFormat("HIGH SCORE: %u", high_score), (SCREEN_WIDTH - MeasureText(TextFormat("HIGH SCORE: %u", high_score), 75)) / 2, SCREEN_HEIGHT * 2 / 5 + 90, 75, GREEN);
+				}
+				else
+				{
+					DrawText(TextFormat("NEW HIGH SCORE: %u", high_score), (SCREEN_WIDTH - MeasureText(TextFormat("NEW HIGH SCORE: %u", high_score), 75)) / 2 + 6, SCREEN_HEIGHT * 2 / 5 + 90 + 6, 75, Fade(BLACK, 0.5f));
+					DrawText(TextFormat("NEW HIGH SCORE: %u", high_score), (SCREEN_WIDTH - MeasureText(TextFormat("NEW HIGH SCORE: %u", high_score), 75)) / 2, SCREEN_HEIGHT * 2 / 5 + 90, 75, GREEN);
+				}
+			}
 		}
 		else if (pause)
 		{
-			// Draw a semi-transparent black rectangle over the whole screen
 			DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Fade(BLACK, 0.5f));
-			DrawText("PAUSED", SCREEN_WIDTH / 2 - 70, SCREEN_HEIGHT / 2 - 20, FONT_SIZE, WHITE);
-			DrawText("Press P to Resume", SCREEN_WIDTH / 2 - 110, SCREEN_HEIGHT / 2 + 30, 20, LIGHTGRAY);
+			// Shadow
+			DrawText("PAUSED", (SCREEN_WIDTH - MeasureText("PAUSED", 75)) / 2 + 6, SCREEN_HEIGHT / 3 + 6, 75, Fade(BLACK, 0.5f));
+			DrawText("Press P to continue", (SCREEN_WIDTH - MeasureText("Press P to continue", 50)) / 2 + 6, SCREEN_HEIGHT / 2 + 80 + 6, 50, Fade(BLACK, 0.5f));
+			// Text
+			DrawText("PAUSED", (SCREEN_WIDTH - MeasureText("PAUSED", 75)) / 2, SCREEN_HEIGHT / 3, 75, WHITE);
+			DrawText("Press P to continue", (SCREEN_WIDTH - MeasureText("Press P to continue", 50)) / 2, SCREEN_HEIGHT / 2 + 80, 50, LIGHTGRAY);
 		}
 
 		// end the frame and get ready for the next one  (display frame, poll input, etc...)
@@ -460,6 +550,10 @@ int main()
 	// Whale::Get().~Whale();
 	// Obstacle::UnloadObstacle;
 	UnloadTexture(Obstacle::obstacle_image);
+	for (Layer &layer : layers)
+	{
+		UnloadTexture(layer.tex);
+	}
 	StopMusicStream(bgm);
 
 	UnloadSound(clear_sfx);
