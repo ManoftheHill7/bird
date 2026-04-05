@@ -22,7 +22,8 @@ enum GameState
 {
 	MENU,
 	PLAYING,
-	GAME_OVER
+	GAME_OVER,
+	CREDITS
 };
 GameState currentState = MENU;
 
@@ -106,6 +107,7 @@ public:
 	{
 		player_vel.y -= 800.0f;
 		player_deg = std::min(player_deg, player_maxdeg);
+		// PlaySound(swim_sfx);
 	}
 
 	Rectangle Move(float deltaTime)
@@ -291,6 +293,8 @@ int main()
 	Music bgm = LoadMusicStream("sfx/music.ogg");
 	Sound clear_sfx = LoadSound("sfx/da_ding.wav");
 	Sound hit_sfx = LoadSound("sfx/thump.wav");
+	// Sound swim_sfx = LoadSound("sfx/swim.wav");
+	// Sound congrats_sfx = LoadSound("sfx/congrats.wav");
 
 	// Set background music
 	bgm.looping = true;
@@ -328,6 +332,10 @@ int main()
 				clear_count = 0;
 				currentState = PLAYING;
 			}
+			if (IsKeyPressed(KEY_C))
+			{
+				currentState = CREDITS;
+			}
 			break;
 
 		case PLAYING:
@@ -342,18 +350,18 @@ int main()
 				SetMusicVolume(bgm, 0.1);
 				float deltaTime = GetFrameTime();
 
-				// Slowly increases the speed by 10% every 10 cleared obstacles
+				// Slowly increases the speed by 2.5% every 2 cleared obstacles
 				if (!speed_flag)
 				{
-					if (clear_count > 0 && clear_count % 10 == 0)
+					if (clear_count > 0 && clear_count % 2 == 0)
 					{
-						deltaSpeed += 0.1f;
+						deltaSpeed += 0.025f;
 						speed_flag = true;
 					}
 				}
 				else
 				{
-					if (!(clear_count % 10 == 0))
+					if (!(clear_count % 2 == 0))
 					{
 						speed_flag = false;
 					}
@@ -411,6 +419,13 @@ int main()
 			UpdateMusicStream(bgm);
 			break;
 
+		case CREDITS:
+			if (IsKeyPressed(KEY_C))
+			{
+				currentState = MENU;
+			}
+			break;
+
 		case GAME_OVER:
 			float deltaTime = GetFrameTime();
 			player_hitbox = Whale::Get().Move(deltaTime);
@@ -446,7 +461,7 @@ int main()
 			DrawTextureEx(layer.tex, {layer.currentX + layer.tex.width * SCALE, 0}, 0.0f, SCALE, WHITE);
 		}
 
-		if (currentState != MENU)
+		if (currentState == PLAYING || currentState == GAME_OVER)
 		{
 			collision_clear = false;
 			collision_hit = false;
@@ -495,9 +510,13 @@ int main()
 			// Shadow
 			DrawText("FLOPPY WHALE", (SCREEN_WIDTH - MeasureText("FLOPPY WHALE", 150)) / 2 + 9, SCREEN_HEIGHT / 5 + 9, 150, Fade(BLACK, 0.5f));
 			DrawText("Press SPACE to start", (SCREEN_WIDTH - MeasureText("Press SPACE to start", 50)) / 2 + 6, SCREEN_HEIGHT / 2 + 6, 50, Fade(BLACK, 0.5f));
+			DrawText("Press C for Credits", (SCREEN_WIDTH - MeasureText("Press C for Credits", 50)) / 2 + 6, SCREEN_HEIGHT / 2 + 80 + 6, 50, Fade(BLACK, 0.5f));
+			DrawText("Press ESC to close", (SCREEN_WIDTH - MeasureText("Press ESC to close", 50)) / 2 + 6, SCREEN_HEIGHT / 2 + 160 + 6, 50, Fade(BLACK, 0.5f));
 			// Text
 			DrawText("FLOPPY WHALE", (SCREEN_WIDTH - MeasureText("FLOPPY WHALE", 150)) / 2, SCREEN_HEIGHT / 5, 150, SKYBLUE);
 			DrawText("Press SPACE to start", (SCREEN_WIDTH - MeasureText("Press SPACE to start", 50)) / 2, SCREEN_HEIGHT / 2, 50, LIGHTGRAY);
+			DrawText("Press C for Credits", (SCREEN_WIDTH - MeasureText("Press C for Credits", 50)) / 2, SCREEN_HEIGHT / 2 + 80, 50, LIGHTGRAY);
+			DrawText("Press ESC to close", (SCREEN_WIDTH - MeasureText("Press ESC to close", 50)) / 2, SCREEN_HEIGHT / 2 + 160, 50, LIGHTGRAY);
 		}
 		else if (currentState == GAME_OVER)
 		{
@@ -525,8 +544,23 @@ int main()
 				{
 					DrawText(TextFormat("NEW HIGH SCORE: %u", high_score), (SCREEN_WIDTH - MeasureText(TextFormat("NEW HIGH SCORE: %u", high_score), 75)) / 2 + 6, SCREEN_HEIGHT * 2 / 5 + 90 + 6, 75, Fade(BLACK, 0.5f));
 					DrawText(TextFormat("NEW HIGH SCORE: %u", high_score), (SCREEN_WIDTH - MeasureText(TextFormat("NEW HIGH SCORE: %u", high_score), 75)) / 2, SCREEN_HEIGHT * 2 / 5 + 90, 75, GREEN);
+					// PlaySound(congrats_sfx);
 				}
 			}
+		}
+		else if (currentState == CREDITS)
+		{
+			DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Fade(BLACK, 0.5f));
+			// Shadow
+			DrawText("Credits", (SCREEN_WIDTH - MeasureText("Credits", 150)) / 2 + 9, SCREEN_HEIGHT / 5 + 9, 150, Fade(BLACK, 0.5f));
+			DrawText("Jacob Reckhard", (SCREEN_WIDTH - MeasureText("Jacob Reckhard", 50)) / 2 + 6, SCREEN_HEIGHT / 2 - 80 + 6, 50, Fade(BLACK, 0.5f));
+			DrawText("ManoftheHill7", (SCREEN_WIDTH - MeasureText("ManoftheHill7", 50)) / 2 + 6, SCREEN_HEIGHT / 2 + 6, 50, Fade(BLACK, 0.5f));
+			DrawText("ManoftheHill7", 10 + 6, SCREEN_HEIGHT - 30 + 3, 25, Fade(BLACK, 0.5f));
+			// Text
+			DrawText("Credits", (SCREEN_WIDTH - MeasureText("Credits", 150)) / 2, SCREEN_HEIGHT / 5, 150, GOLD);
+			DrawText("Jacob Reckhard", (SCREEN_WIDTH - MeasureText("Jacob Reckhard", 50)) / 2, SCREEN_HEIGHT / 2 - 80, 50, LIGHTGRAY);
+			DrawText("ManoftheHill7", (SCREEN_WIDTH - MeasureText("ManoftheHill7", 50)) / 2, SCREEN_HEIGHT / 2, 50, LIGHTGRAY);
+			DrawText("Press C to return to menu", 10, SCREEN_HEIGHT - 30, 25, LIGHTGRAY);
 		}
 		else if (pause)
 		{
