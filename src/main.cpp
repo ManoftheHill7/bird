@@ -29,7 +29,7 @@ GameState currentState = MENU;
 
 struct Layer
 {
-	Texture2D tex;
+	Texture tex;
 	float speedFactor; // 0.0 to 1.0
 	float currentX;
 };
@@ -103,11 +103,11 @@ public:
 		player_origin = {source_rec.width * SCALE / 2, source_rec.height * SCALE / 2};
 	}
 
-	void Jump()
+	void Jump(Sound swim_sfx)
 	{
 		player_vel.y -= 800.0f;
 		player_deg = std::min(player_deg, player_maxdeg);
-		// PlaySound(swim_sfx);
+		PlaySound(swim_sfx);
 	}
 
 	Rectangle Move(float deltaTime)
@@ -152,11 +152,11 @@ public:
 		}
 	}
 
-	unsigned int Update(float deltaTime, unsigned int clear_count, bool collision_clear, bool collision_hit, Sound clear_sfx, Sound hit_sfx)
+	unsigned int Update(float deltaTime, unsigned int clear_count, bool collision_clear, bool collision_hit, Sound clear_sfx, Sound hit_sfx, Sound swim_sfx)
 	{
 		if (IsKeyPressed(KEY_SPACE))
 		{
-			Whale::Get().Jump();
+			Whale::Get().Jump(swim_sfx);
 			current_frame = 0;
 		}
 		Whale::Get().Animation(deltaTime);
@@ -293,8 +293,8 @@ int main()
 	Music bgm = LoadMusicStream("sfx/music.ogg");
 	Sound clear_sfx = LoadSound("sfx/da_ding.wav");
 	Sound hit_sfx = LoadSound("sfx/thump.wav");
-	// Sound swim_sfx = LoadSound("sfx/swim.wav");
-	// Sound congrats_sfx = LoadSound("sfx/congrats.wav");
+	Sound swim_sfx = LoadSound("sfx/swim.wav");
+	Sound congrats_sfx = LoadSound("sfx/congrats.wav");
 
 	// Set background music
 	bgm.looping = true;
@@ -409,7 +409,7 @@ int main()
 					currentState = GAME_OVER;
 				}
 
-				clear_count = Whale::Get().Update(deltaTime, clear_count, collision_clear, collision_hit, clear_sfx, hit_sfx);
+				clear_count = Whale::Get().Update(deltaTime, clear_count, collision_clear, collision_hit, clear_sfx, hit_sfx, swim_sfx);
 			}
 			else
 			{
@@ -544,7 +544,7 @@ int main()
 				{
 					DrawText(TextFormat("NEW HIGH SCORE: %u", high_score), (SCREEN_WIDTH - MeasureText(TextFormat("NEW HIGH SCORE: %u", high_score), 75)) / 2 + 6, SCREEN_HEIGHT * 2 / 5 + 90 + 6, 75, Fade(BLACK, 0.5f));
 					DrawText(TextFormat("NEW HIGH SCORE: %u", high_score), (SCREEN_WIDTH - MeasureText(TextFormat("NEW HIGH SCORE: %u", high_score), 75)) / 2, SCREEN_HEIGHT * 2 / 5 + 90, 75, GREEN);
-					// PlaySound(congrats_sfx);
+					PlaySound(congrats_sfx);
 				}
 			}
 		}
@@ -592,6 +592,8 @@ int main()
 
 	UnloadSound(clear_sfx);
 	UnloadSound(hit_sfx);
+	UnloadSound(swim_sfx);
+	UnloadSound(congrats_sfx);
 	UnloadMusicStream(bgm);
 
 	CloseAudioDevice();
